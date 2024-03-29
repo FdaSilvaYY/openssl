@@ -437,10 +437,16 @@ static int get_cert_by_subject_ex(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
         return 0;
     }
 
-    args.h = X509_NAME_hash_ex(name, libctx, propq, &ok);
-    if (ok != 0)
+    args.h = X509_NAME_hash_ex(name, libctx, propq, &ok); /* SHA1 name hash */
+    if (ok != 0) {
         rv = do_store_hash_lookup(xl, &args, ret, libctx, propq);
-
+    }
+#ifndef OPENSSL_NO_MD5
+    else {
+        args.h = X509_NAME_hash_old(name); /* MD5 name hash */
+        rv = do_store_hash_lookup(xl, &args, ret, libctx, propq);
+    }
+#endif
     return rv;
 }
 static int get_cert_by_subject(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
