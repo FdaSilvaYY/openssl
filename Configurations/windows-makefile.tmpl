@@ -469,6 +469,7 @@ uninstall: {- "uninstall_docs" if !$disabled{docs}; -} uninstall_sw {- $disabled
 libclean:
 	"$(PERL)" -e "map { m/(.*)\.dll$$/; unlink glob """{.,apps,test,fuzz}/$$1.*"""; } @ARGV" $(SHLIBS)
 	-del /Q /F $(LIBS) libcrypto.* libssl.* ossl_static.pdb
+	-del /Q /F $(LIBS) libcrypto*.res libssl*.res
 
 clean: libclean
 	{- join("\n\t", map { "-del /Q /F $_" } @HTMLDOCS1) || "\@rem" -}
@@ -482,8 +483,9 @@ clean: libclean
 	{- join("\n\t", map { "-del /Q /F $_" } @GENERATED) || "\@rem" -}
 	-del /Q /S /F *.d *.obj *.pdb *.ilk *.manifest
 	-del /Q /S /F engines\*.lib engines\*.exp
+	-del /Q /S /F providers\*.lib providers\*.exp providers\*.res
 	-del /Q /S /F apps\*.lib apps\*.rc apps\*.res apps\*.exp
-	-del /Q /S /F test\*.exp
+	-del /Q /S /F test\*.exp test\*.lib
 	-rd /Q /S test\test-runs
 
 distclean: clean
