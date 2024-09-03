@@ -219,48 +219,29 @@ static int add_cert_dir(BY_DIR *ctx, const char *dir, int type)
     return 1;
 }
 
-static int get_cert_by_subject_ex(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
-                                  const X509_NAME *name, X509_OBJECT *ret,
-                                  OSSL_LIB_CTX *libctx, const char *propq)
+typedef struct lookup_args_st {
+    unsigned long h ; /* hash value to lookup for */ 
+    X509_OBJECT stmp;
+    const char *postfix; /* = ""; */
+} ossl_lookup_args;
+
+static int do_store_hash_lookup(X509_LOOKUP *xl, const ossl_lookup_args *args, X509_OBJECT *ret, 
+                                OSSL_LIB_CTX *libctx, const char *propq)
 {
     BY_DIR *ctx;
-    union {
-        X509 st_x509;
-        X509_CRL crl;
-    } data;
-    int ok = 0, rv;
+    int ok = 0, rv = 0;
     int i, j, k;
-    unsigned long h;
-    BUF_MEM *b = NULL;
-    X509_OBJECT stmp, *tmp;
-    const char *postfix = "";
-
-    if (name == NULL)
-        return 0;
-
-    stmp.type = type;
-    if (type == X509_LU_X509) {
-        data.st_x509.cert_info.subject = (X509_NAME *)name; /* won't modify it */
-        stmp.data.x509 = &data.st_x509;
-    } else if (type == X509_LU_CRL) {
-        data.crl.crl.issuer = (X509_NAME *)name; /* won't modify it */
-        stmp.data.crl = &data.crl;
-        postfix = "r";
-    } else {
-        ERR_raise(ERR_LIB_X509, X509_R_WRONG_LOOKUP_TYPE);
-        goto finish;
-    }
+    BUF_MEM *b;
+    X509_LOOKUP_TYPE type = args->stmp.type;
 
     if ((b = BUF_MEM_new()) == NULL) {
         ERR_raise(ERR_LIB_X509, ERR_R_BUF_LIB);
-        goto finish;
+        return 0;
     }
 
     ctx = (BY_DIR *)xl->method_data;
-    h = X509_NAME_hash_ex(name, libctx, propq, &i);
-    if (i == 0)
-        goto finish;
     for (i = 0; i < sk_BY_DIR_ENTRY_num(ctx->dirs); i++) {
+        X509_OBJECT *tmp;
         BY_DIR_ENTRY *ent;
         int idx;
         BY_DIR_HASH htmp, *hent;
@@ -272,7 +253,7 @@ static int get_cert_by_subject_ex(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
             goto finish;
         }
         if (type == X509_LU_CRL && ent->hashes) {
-            htmp.hash = h;
+            htmp.hash = args->h;
             if (!CRYPTO_THREAD_read_lock(ctx->lock))
                 goto finish;
             idx = sk_BY_DIR_HASH_find(ent->hashes, &htmp);
@@ -311,12 +292,12 @@ static int get_cert_by_subject_ex(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
                  * should be added.
                  */
                 BIO_snprintf(b->data, b->max,
-                             "%s%08lx.%s%d", ent->dir, h, postfix, k);
+                             "%s%08lx.%s%d", ent->dir, args->h, args->postfix, k);
             } else
 #endif
             {
                 BIO_snprintf(b->data, b->max,
-                             "%s%c%08lx.%s%d", ent->dir, c, h, postfix, k);
+                             "%s%c%08lx.%s%d", ent->dir, c, args->h, args->postfix, k);
             }
 #ifndef OPENSSL_NO_POSIX_IO
 # ifdef _WIN32
@@ -350,7 +331,7 @@ static int get_cert_by_subject_ex(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
         if (k > 0) {
             if (!X509_STORE_lock(xl->store_ctx))
                 goto finish;
-            j = sk_X509_OBJECT_find(xl->store_ctx->objs, &stmp);
+            j = sk_X509_OBJECT_find(xl->store_ctx->objs, (X509_OBJECT *) &args->stmp);
             tmp = sk_X509_OBJECT_value(xl->store_ctx->objs, j);
             X509_STORE_unlock(xl->store_ctx);
         } else {
@@ -370,7 +351,7 @@ static int get_cert_by_subject_ex(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
              * first.
              */
             if (hent == NULL) {
-                htmp.hash = h;
+                htmp.hash = args->h;
                 idx = sk_BY_DIR_HASH_find(ent->hashes, &htmp);
                 hent = sk_BY_DIR_HASH_value(ent->hashes, idx);
             }
@@ -380,7 +361,7 @@ static int get_cert_by_subject_ex(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
                     CRYPTO_THREAD_unlock(ctx->lock);
                     goto finish;
                 }
-                hent->hash = h;
+                hent->hash = args->h;
                 hent->suffix = k;
                 if (!sk_BY_DIR_HASH_push(ent->hashes, hent)) {
                     CRYPTO_THREAD_unlock(ctx->lock);
@@ -428,6 +409,40 @@ static int get_cert_by_subject_ex(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
     return ok;
 }
 
+static int get_cert_by_subject_ex(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
+                                  const X509_NAME *name, X509_OBJECT *ret,
+                                  OSSL_LIB_CTX *libctx, const char *propq)
+{
+    int rv = 0, ok = 0;
+    union {
+        X509 st_x509;
+        X509_CRL crl;
+    } data;
+    ossl_lookup_args args = { 0 };
+
+    if (name == NULL)
+        return 0;
+
+    args.stmp.type = type;
+    if (type == X509_LU_X509) {
+        data.st_x509.cert_info.subject = (X509_NAME *)name; /* won't modify it */
+        args.stmp.data.x509 = &data.st_x509;
+        args.postfix = "";
+    } else if (type == X509_LU_CRL) {
+        data.crl.crl.issuer = (X509_NAME *)name; /* won't modify it */
+        args.stmp.data.crl = &data.crl;
+        args.postfix = "r";
+    } else {
+        ERR_raise(ERR_LIB_X509, X509_R_WRONG_LOOKUP_TYPE);
+        return 0;
+    }
+
+    args.h = X509_NAME_hash_ex(name, libctx, propq, &ok);
+    if (ok != 0)
+        rv = do_store_hash_lookup(xl, &args, ret, libctx, propq);
+
+    return rv;
+}
 static int get_cert_by_subject(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
                                const X509_NAME *name, X509_OBJECT *ret)
 {
