@@ -228,7 +228,7 @@ static int get_cert_by_subject_ex(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
         X509 st_x509;
         X509_CRL crl;
     } data;
-    int ok = 0;
+    int ok = 0, rv;
     int i, j, k;
     unsigned long h;
     BUF_MEM *b = NULL;
@@ -324,19 +324,19 @@ static int get_cert_by_subject_ex(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
 # endif
             {
                 struct stat st;
+
                 if (stat(b->data, &st) < 0)
                     break;
             }
 #endif
             /* found one. */
-            if (type == X509_LU_X509) {
-                if ((X509_load_cert_file_ex(xl, b->data, ent->dir_type, libctx,
-                                            propq)) == 0)
-                    break;
-            } else if (type == X509_LU_CRL) {
-                if ((X509_load_crl_file(xl, b->data, ent->dir_type)) == 0)
-                    break;
-            }
+            if (type == X509_LU_X509)
+                rv = X509_load_cert_file_ex(xl, b->data, ent->dir_type, libctx, propq);
+            else if (type == X509_LU_CRL)
+                rv = X509_load_crl_file(xl, b->data, ent->dir_type);
+
+            if (rv == 0)
+                break;
             /* else case will caught higher up */
             k++;
         }
@@ -378,7 +378,6 @@ static int get_cert_by_subject_ex(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
                 hent = OPENSSL_malloc(sizeof(*hent));
                 if (hent == NULL) {
                     CRYPTO_THREAD_unlock(ctx->lock);
-                    ok = 0;
                     goto finish;
                 }
                 hent->hash = h;
@@ -387,7 +386,6 @@ static int get_cert_by_subject_ex(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
                     CRYPTO_THREAD_unlock(ctx->lock);
                     OPENSSL_free(hent);
                     ERR_raise(ERR_LIB_X509, ERR_R_CRYPTO_LIB);
-                    ok = 0;
                     goto finish;
                 }
 
@@ -401,7 +399,6 @@ static int get_cert_by_subject_ex(X509_LOOKUP *xl, X509_LOOKUP_TYPE type,
             }
 
             CRYPTO_THREAD_unlock(ctx->lock);
-
         }
 
         if (tmp != NULL) {
