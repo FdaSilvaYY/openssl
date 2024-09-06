@@ -1,5 +1,5 @@
 #! /usr/bin/env perl
-# Copyright 2015-2016 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2024 The OpenSSL Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
@@ -18,7 +18,7 @@ setup("test_x509_store_old");
 
 #If "openssl rehash -help" fails it's most likely because we're on a platform
 #that doesn't support the rehash command (e.g. Windows)
-plan skip_all => "test_rehash is not available on this platform"
+plan skip_all => "x509_store_old is not available on this platform"
     unless run(app(["openssl", "rehash", "-help"]));
 
 # We use 'openssl verify' for these tests, as it contains everything
