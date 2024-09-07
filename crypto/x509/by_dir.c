@@ -359,6 +359,7 @@ static int do_store_hash_lookup(X509_LOOKUP *xl, const ossl_lookup_args *args, X
                 hent = OPENSSL_malloc(sizeof(*hent));
                 if (hent == NULL) {
                     CRYPTO_THREAD_unlock(ctx->lock);
+                    ok = 0;
                     goto finish;
                 }
                 hent->hash = args->h;
@@ -367,6 +368,7 @@ static int do_store_hash_lookup(X509_LOOKUP *xl, const ossl_lookup_args *args, X
                     CRYPTO_THREAD_unlock(ctx->lock);
                     OPENSSL_free(hent);
                     ERR_raise(ERR_LIB_X509, ERR_R_CRYPTO_LIB);
+                    ok = 0;
                     goto finish;
                 }
 
